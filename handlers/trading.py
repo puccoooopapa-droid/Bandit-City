@@ -7,7 +7,7 @@ router = Router()
 
 # URL вашего WebApp (нужно заменить на реальный HTTPS URL после деплоя)
 # Для локальной разработки используйте ngrok URL
-WEBAPP_URL = "https://affirmatively-nonadept-dessie.ngrok-free.dev"
+WEBAPP_URL = "https://bandit-city.onrender.com"
 
 @router.message(F.text == "📈 Трейдинг")
 async def trading_menu(message: types.Message):
@@ -16,3 +16,4 @@ async def trading_menu(message: types.Message):
         [types.InlineKeyboardButton(text="📊 Открыть биржу", web_app=WebAppInfo(url=WEBAPP_URL))]
     ])
     await message.answer("📈 Доступ к бирже открыт! Нажмите кнопку ниже, чтобы начать торговлю.", reply_markup=kb)
+
