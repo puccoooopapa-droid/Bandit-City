@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bandit Trade</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg: #0E1628;
+            --card: #151E32;
+            --text: #FFFFFF;
+            --text-sec: #8B95B5;
+            --green: #16C784;
+            --red: #EA3943;
+            --blue: #3861FB;
+            --border: #232D45;
+        }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; font-size: 14px; }
+
+        /* Layout */
+        .main { flex: 1; overflow-y: auto; padding: 16px; padding-bottom: 80px; }
+        .nav { height: 60px; background: var(--card); display: flex; justify-content: space-around; align-items: center; position: fixed; bottom: 0; width: 100%; border-top: 1px solid var(--border); z-index: 100; padding-bottom: env(safe-area-inset-bottom); }
+        .nav-item { font-size: 10px; color: var(--text-sec); display: flex; flex-direction: column; align-items: center; cursor: pointer; flex: 1; height: 100%; justify-content: center; }
+        .nav-item.active { color: var(--blue); }
+        .nav-icon { font-size: 20px; margin-bottom: 4px; }
+
+        /* Components */
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .symbol-select { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+        .price-box { text-align: right; }
+        .price { font-size: 20px; font-weight: 700; }
+        .change { font-size: 12px; font-weight: 600; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.05); display: inline-block; margin-top: 2px; }
+
+        .chart-box { height: 250px; background: var(--card); border-radius: 12px; margin-bottom: 16px; position: relative; border: 1px solid var(--border); overflow: hidden; cursor: crosshair; }
+        canvas { width: 100%; height: 100%; display: block; }
+
+        /* Tooltip */
+        .tooltip { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 5px 10px; border-radius: 4px; font-size: 12px; pointer-events: none; display: none; border: 1px solid var(--border); color: #fff; z-index: 10; }
+
+        .panel { background: var(--card); padding: 16px; border-radius: 16px; border: 1px solid var(--border); margin-bottom: 16px; }
+        .row { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 14px; align-items: center; }
+        .row:last-child { margin-bottom: 0; }
+        .label { color: var(--text-sec); }
+        .val { font-weight: 600; }
+
+        .input-group { position: relative; margin-bottom: 12px; }
+        input { width: 100%; background: #1C263F; border: 1px solid var(--border); color: #fff; padding: 14px; border-radius: 10px; font-size: 18px; outline: none; font-weight: 600; }
+        input:focus { border-color: var(--blue); }
+        .input-label { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--text-sec); font-size: 12px; }
+
+        .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .btn { padding: 14px; border: none; border-radius: 10px; font-weight: 700; color: #fff; font-size: 16px; cursor: pointer; display: flex; justify-content: center; align-items: center; }
+        .btn:active { opacity: 0.8; transform: scale(0.98); }
+        .btn-buy { background: var(--green); }
+        .btn-sell { background: var(--red); }
+        .btn-blue { background: var(--blue); width: 100%; }
+        .btn-danger { background: rgba(234, 57, 67, 0.15); color: var(--red); width: 100%; border: 1px solid var(--red); margin-top: 20px; }
+
+        /* Asset List Modal */
+        .asset-list { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); z-index: 200; overflow-y: auto; padding: 16px; animation: slideUp 0.2s ease; }
+        .asset-list.open { display: block; }
+        .asset-item { display: flex; justify-content: space-between; align-items: center; padding: 16px; background: var(--card); border-radius: 12px; margin-bottom: 8px; border: 1px solid var(--border); cursor: pointer; }
+        .asset-item:active { background: #1C263F; }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+        /* Exchange */
+        .ex-arrow { text-align: center; font-size: 24px; margin: 10px 0; color: var(--text-sec); }
+        .ex-select { width: 100%; background: #1C263F; border: 1px solid var(--border); color: #fff; padding: 14px; border-radius: 10px; font-size: 16px; outline: none; appearance: none; }
+        .max-btn { color: var(--blue); font-size: 12px; font-weight: 700; cursor: pointer; margin-left: 8px; }
+
+        /* Trades Feed */
+        .trades-feed { margin-top: 20px; background: var(--card); padding: 15px; border-radius: 12px; border: 1px solid var(--border); }
+        .trade-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #232D45; font-size: 12px; }
+        .trade-item:last-child { border-bottom: none; }
+        .trade-buy { color: var(--green); font-weight: bold; }
+        .trade-sell { color: var(--red); font-weight: bold; }
+
+        /* Profile & Portfolio */
+        .profile-header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+        .avatar { width: 60px; height: 60px; background: linear-gradient(135deg, var(--blue), #8B5CF6); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; color: #fff; flex-shrink: 0; }
+        .profile-info h2 { margin: 0; font-size: 20px; }
+        .profile-meta { color: var(--text-sec); font-size: 13px; margin-top: 4px; }
+
+        .empty-state { text-align: center; padding: 40px 20px; color: var(--text-sec); }
+        .empty-icon { font-size: 48px; margin-bottom: 10px; opacity: 0.5; }
+
+        /* Top Traders */
+        .top-list { margin-top: 20px; }
+        .top-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+        .top-rank { width: 20px; font-weight: bold; color: var(--blue); }
+
+        .screen { display: none; }
+        .screen.active { display: block; }
+
+        h2 { margin-top: 0; margin-bottom: 16px; font-size: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="main">
+
+        <!-- TRADE SCREEN -->
+        <div id="screen-trade" class="screen active">
+            <div class="header">
+                <div class="symbol-select" onclick="toggleAssets()">
+                    <span id="symbol">BTCX</span> <span style="font-size: 12px; color: var(--text-sec);">▼</span>
+                </div>
+                <div class="price-box">
+                    <div class="price" id="price">...</div>
+                    <div class="change" id="change">...</div>
+                </div>
+            </div>
+
+            <div class="chart-box" id="chart-container">
+                <canvas id="chart"></canvas>
+                <div id="tooltip" class="tooltip"></div>
+            </div>
+
+            <div class="panel">
+                <div class="row">
+                    <span class="label">Баланс</span>
+                    <span class="val" id="balance">...</span>
+                </div>
+                <div class="row">
+                    <span class="label">В наличии</span>
+                    <span class="val" id="asset-bal">0.00</span>
+                </div>
+                <input type="number" id="amount" placeholder="Сумма $" min="0">
+                <div class="btns">
+                    <button class="btn btn-buy" onclick="trade('buy')">КУПИТЬ</button>
+                    <button class="btn btn-sell" onclick="trade('sell')">ПРОДАТЬ</button>
+                </div>
+            </div>
+
+            <!-- Trades Feed -->
+            <div class="trades-feed">
+                <div style="color: var(--text-sec); font-size: 12px; margin-bottom: 10px; font-weight: bold;">ЛЕНТА СДЕЛОК</div>
+                <div id="trades-list">
+                    <div style="text-align: center; color: var(--text-sec); padding: 10px;">Загрузка...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- EXCHANGE SCREEN -->
+        <div id="screen-exchange" class="screen">
+            <h2 style="margin-top: 0;">Обмен</h2>
+            <div class="panel">
+                <div class="row">
+                    <span class="label">Отдаю (USD)</span>
+                    <span class="max-btn" onclick="setMaxExchange()">МАКС</span>
+                </div>
+                <input type="number" id="ex-from" placeholder="0" min="0" oninput="calcExchange()">
+
+                <div style="text-align: center; margin: 10px;">⬇️</div>
+
+                <div class="row">
+                    <span class="label">Получаю</span>
+                </div>
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <input type="number" id="ex-to" placeholder="0.00" readonly style="flex: 1; margin-bottom: 0;">
+                    <select id="ex-select" class="ex-select" style="width: 100px;" onchange="calcExchange()"></select>
+                </div>
+
+                <div class="row">
+                    <span class="label">Курс:</span>
+                    <span class="val" id="ex-rate">...</span>
+                </div>
+
+                <button class="btn btn-blue" onclick="doExchange()">ОБМЕНЯТЬ</button>
+            </div>
+        </div>
+
+        <!-- PORTFOLIO SCREEN -->
+        <div id="screen-portfolio" class="screen">
+            <h2 style="margin-top: 0;">Портфель</h2>
+            <div class="panel">
+                <div class="row">
+                    <span class="label">Стоимость активов</span>
+                    <span class="val" style="font-size: 20px;" id="port-total">...</span>
+                </div>
+            </div>
+
+            <div id="portfolio-list"></div>
+
+            <button class="btn btn-danger" onclick="sellAllConfirm()">ПРОДАТЬ ВСЁ</button>
+        </div>
+
+        <!-- PROFILE SCREEN -->
+        <div id="screen-profile" class="screen">
+            <h2 style="margin-top: 0;">Профиль</h2>
+            <div class="panel">
+                <div class="profile-header">
+                    <div class="avatar" id="prof-avatar">U</div>
+                    <div class="profile-info">
+                        <h2 id="prof-name">Загрузка...</h2>
+                        <div class="profile-meta" id="prof-tag">@username</div>
+                        <div class="profile-meta" id="prof-id">ID: ...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="row"><span class="label">Баланс</span><span class="val" style="color: var(--green);" id="prof-bal">...</span></div>
+                <div class="row"><span class="label">Донат</span><span class="val" style="color: var(--blue);" id="prof-don">...</span></div>
+                <div class="row"><span class="label">Статус</span><span class="val" id="prof-status">Новичок</span></div>
+            </div>
+
+            <div class="panel">
+                <div style="color: var(--text-sec); font-size: 12px; margin-bottom: 10px; font-weight: bold;">ТОП ТРЕЙДЕРОВ</div>
+                <div id="top-list"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ASSET LIST MODAL -->
+    <div class="asset-list" id="asset-screen">
+        <h2 style="margin-top: 0;">Выберите актив</h2>
+        <div id="asset-items"></div>
+        <button class="btn" style="background: #232D45; margin-top: 20px;" onclick="toggleAssets()">Закрыть</button>
+    </div>
+
+    <!-- NAVIGATION -->
+    <div class="nav">
+        <div class="nav-item active" onclick="switchTab('trade', this)"><div class="nav-icon">📊</div>Трейд</div>
+        <div class="nav-item" onclick="switchTab('exchange', this)"><div class="nav-icon">💱</div>Обмен</div>
+        <div class="nav-item" onclick="switchTab('portfolio', this)"><div class="nav-icon">💼</div>Портфель</div>
+        <div class="nav-item" onclick="switchTab('profile', this)"><div class="nav-icon">👤</div>Профиль</div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        // State
+        let state = { symbol: 'BTCX', market: [], user: {} };
+        const canvas = document.getElementById('chart');
+        const ctx = canvas.getContext('2d');
+        const tooltip = document.getElementById('tooltip');
+
+        // --- CHART ENGINE (Custom) ---
+        function drawChart(history, mouseX = -1) {
+            const w = canvas.parentElement.clientWidth * 2;
+            const h = canvas.parentElement.clientHeight * 2;
+            canvas.width = w; canvas.height = h;
+            ctx.scale(2, 2);
+            const width = w/2; const height = h/2;
+
+            ctx.clearRect(0, 0, width, height);
+            if (!history || history.length < 2) return;
+
+            const min = Math.min(...history);
+            const max = Math.max(...history);
+            const range = max - min || 1;
+            const pad = height * 0.1;
+
+            const getY = p => height - ((p - min) / range) * (height - pad*2) - pad;
+            const getX = i => (i / (history.length - 1)) * width;
+
+            // Grid
+            ctx.strokeStyle = '#232D45'; ctx.lineWidth = 1;
+            ctx.beginPath();
+            for(let i=1; i<4; i++) { const y = (height/4)*i; ctx.moveTo(0, y); ctx.lineTo(width, y); }
+            ctx.stroke();
+
+            // Line
+            ctx.beginPath();
+            const step = width / (history.length - 1);
+            history.forEach((p, i) => {
+                if(i===0) ctx.moveTo(getX(i), getY(p));
+                else ctx.lineTo(getX(i), getY(p));
+            });
+
+            const isUp = history[history.length-1] >= history[0];
+            const color = isUp ? '#16C784' : '#EA3943';
+
+            ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+
+            // Fill
+            ctx.lineTo(width, height); ctx.lineTo(0, height); ctx.closePath();
+            const grad = ctx.createLinearGradient(0, 0, 0, height);
+            grad.addColorStop(0, isUp ? 'rgba(22, 199, 132, 0.15)' : 'rgba(246, 69, 93, 0.15)');
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = grad; ctx.fill();
+
+            // Crosshair & Tooltip
+            if (mouseX >= 0) {
+                const index = Math.round((mouseX / width) * (history.length - 1));
+                const price = history[index];
+
+                if (price) {
+                    const x = getX(index);
+                    const y = getY(price);
+
+                    // Crosshair lines
+                    ctx.strokeStyle = '#8B95B5';
+                    ctx.setLineDash([5, 5]);
+                    ctx.lineWidth = 1;
+
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0); ctx.lineTo(x, height);
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.moveTo(0, y); ctx.lineTo(width, y);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    // Tooltip
+                    tooltip.style.display = 'block';
+                    tooltip.style.left = (mouseX + 10) + 'px';
+                    tooltip.style.top = (y - 40) + 'px';
+                    tooltip.innerHTML = `Цена: $${price.toFixed(2)}<br>Время: -${(history.length - 1 - index) * 5}с`;
+                }
+            } else {
+                tooltip.style.display = 'none';
+            }
+        }
+
+        // Mouse Events for Chart
+        const chartContainer = document.getElementById('chart-container');
+        chartContainer.addEventListener('mousemove', (e) => {
+            const rect = chartContainer.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const asset = state.market.find(a => a.symbol === state.symbol);
+            if (asset) drawChart(asset.history, x);
+        });
+        chartContainer.addEventListener('mouseleave', () => {
+            const asset = state.market.find(a => a.symbol === state.symbol);
+            if (asset) drawChart(asset.history);
+        });
+        // Touch support
+        chartContainer.addEventListener('touchmove', (e) => {
+            const rect = chartContainer.getBoundingClientRect();
+            const x = e.touches[0].clientX - rect.left;
+            const asset = state.market.find(a => a.symbol === state.symbol);
+            if (asset) drawChart(asset.history, x);
+        });
+
+        // --- API ---
+        async function api(url, method='GET', body=null) {
+            try {
+                const headers = { 'Authorization': tg.initData, 'Content-Type': 'application/json' };
+                const opts = { method, headers };
+                if(body) opts.body = JSON.stringify(body);
+                const res = await fetch(`/api${url}`, opts);
+                return await res.json();
+            } catch(e) { console.error(e); return null; }
+        }
+
+        // --- LOGIC ---
+        async function update() {
+            const [market, me, trades, top] = await Promise.all([
+                api('/market'),
+                api('/me'),
+                api('/trades'),
+                api('/top')
+            ]);
+
+            if (market) {
+                state.market = market;
+                const asset = market.find(a => a.symbol === state.symbol);
+                if (asset) {
+                    document.getElementById('symbol').innerText = asset.symbol;
+                    document.getElementById('price').innerText = `$${asset.price.toFixed(2)}`;
+                    const change = document.getElementById('change');
+                    change.innerText = `${asset.change.toFixed(2)}%`;
+                    change.style.color = asset.change >= 0 ? '#16C784' : '#EA3943';
+                    drawChart(asset.history);
+
+                    // Asset List
+                    const list = document.getElementById('asset-items');
+                    list.innerHTML = market.map(a => `
+                        <div class="asset-item" onclick="selectAsset('${a.symbol}')">
+                            <b>${a.symbol}</b>
+                            <span>$${a.price.toFixed(2)}</span>
+                        </div>
+                    `).join('');
+
+                    // Exchange Select
+                    const exSelect = document.getElementById('ex-select');
+                    if (exSelect.options.length === 0) {
+                        market.forEach(a => {
+                            const opt = document.createElement('option');
+                            opt.value = a.symbol;
+                            opt.innerText = a.symbol;
+                            exSelect.appendChild(opt);
+                        });
+                    }
+                }
+            }
+
+            if (me) {
+                state.user = me;
+                const balStr = `$${(me.balance || 0).toLocaleString()}`;
+                document.getElementById('balance').innerText = balStr;
+
+                const item = me.portfolio.find(p => p.symbol === state.symbol);
+                document.getElementById('asset-bal').innerText = item ? item.amount.toFixed(4) : '0.00';
+
+                // Profile
+                document.getElementById('prof-name').innerText = me.name || 'User';
+                document.getElementById('prof-id').innerText = `ID: #${String(me.tag || 0).padStart(4, '0')}`;
+                document.getElementById('prof-bal').innerText = balStr;
+                document.getElementById('prof-don').innerText = `${me.donate || 0} 💎`;
+
+                // Portfolio
+                const portList = document.getElementById('portfolio-list');
+                let totalVal = 0;
+                if (me.portfolio.length === 0) {
+                    portList.innerHTML = '<div style="text-align:center; color:#8B95B5; padding:20px;">Пусто</div>';
+                } else {
+                    portList.innerHTML = me.portfolio.map(p => {
+                        const price = state.market.find(m => m.symbol === p.symbol)?.price || 0;
+                        const val = p.amount * price;
+                        totalVal += val;
+                        return `
+                            <div class="panel" style="margin-bottom:10px;">
+                                <div class="row">
+                                    <span style="font-weight:bold;">${p.symbol}</span>
+                                    <span>$${val.toFixed(2)}</span>
+                                </div>
+                                <div class="row">
+                                    <span class="label">$${price.toFixed(2)}</span>
+                                    <span style="font-weight:bold;">${p.amount.toFixed(4)} ед.</span>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                // ИСПРАВЛЕНИЕ: Только стоимость активов
+                document.getElementById('port-total').innerText = `$${Math.floor(me.assets_value || 0).toLocaleString()}`;
+            }
+
+            if (trades) {
+                const list = document.getElementById('trades-list');
+                if (trades.length === 0) {
+                    list.innerHTML = '<div style="text-align: center; color: var(--text-sec); padding: 10px;">Сделок пока нет</div>';
+                } else {
+                    list.innerHTML = trades.map(t => {
+                        const time = new Date(t.time * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                        return `
+                            <div class="trade-item">
+                                <span>${time} ${t.username}</span>
+                                <span class="${t.type === 'BUY' ? 'trade-buy' : 'trade-sell'}">${t.type} ${t.amount.toFixed(2)} ${t.symbol}</span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            }
+
+            if (top) {
+                const list = document.getElementById('top-list');
+                list.innerHTML = top.map((u, i) => `
+                    <div class="top-item">
+                        <div><span class="top-rank">#${i+1}</span> ${u.name}</div>
+                        <div style="font-weight:bold;">$${u.money.toLocaleString()}</div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        window.selectAsset = (sym) => {
+            state.symbol = sym;
+            toggleAssets();
+            update();
+        };
+
+        window.toggleAssets = () => {
+            const el = document.getElementById('asset-screen');
+            el.style.display = el.style.display === 'block' ? 'none' : 'block';
+        };
+
+        window.trade = async (action) => {
+            const amount = parseFloat(document.getElementById('amount').value);
+            if (!amount || amount <= 0) return tg.showAlert("Введите корректную сумму");
+            if (action === 'buy' && amount > state.user.balance) return tg.showAlert("Недостаточно средств");
+
+            tg.MainButton.showProgress();
+            const res = await api('/trade', 'POST', {
+                action: action,
+                symbol: state.symbol,
+                amount: action === 'buy' ? amount : amount
+            });
+            tg.MainButton.hideProgress();
+
+            if (res && res.status === 'ok') {
+                tg.HapticFeedback.notificationOccurred('success');
+                document.getElementById('amount').value = '';
+                update();
+            } else {
+                tg.showAlert(res ? res.message : "Ошибка");
+            }
+        };
+
+        // Exchange Logic
+        window.setMaxExchange = () => {
+            if (state.user) {
+                document.getElementById('ex-from').value = state.user.balance;
+                calcExchange();
+            }
+        };
+
+        window.calcExchange = () => {
+            const amount = parseFloat(document.getElementById('ex-from').value) || 0;
+            if (amount <= 0) {
+                document.getElementById('ex-to').value = '';
+                return;
+            }
+
+            const symbol = document.getElementById('ex-select').value;
+            const asset = state.market.find(a => a.symbol === symbol);
+
+            if (asset) {
+                const res = amount / asset.price;
+                document.getElementById('ex-to').value = res.toFixed(6);
+                document.getElementById('ex-rate').innerText = `1 ${symbol} = $${asset.price.toFixed(2)}`;
+            } else {
+                document.getElementById('ex-to').value = '';
+                document.getElementById('ex-rate').innerText = '...';
+            }
+        };
+
+        window.doExchange = async () => {
+            const amount = parseFloat(document.getElementById('ex-from').value);
+            const symbol = document.getElementById('ex-select').value;
+            if (!amount || amount <= 0 || !symbol) return tg.showAlert("Введите корректную сумму");
+
+            tg.MainButton.showProgress();
+            const res = await api('/trade', 'POST', { action: 'buy', symbol: symbol, amount: amount });
+            tg.MainButton.hideProgress();
+
+            if (res && res.status === 'ok') {
+                tg.HapticFeedback.notificationOccurred('success');
+                document.getElementById('ex-from').value = '';
+                tg.showAlert(`Обмен выполнен!`);
+                update();
+            } else {
+                tg.showAlert(res ? res.message : "Ошибка");
+            }
+        };
+
+        // Sell All Logic
+        window.sellAllConfirm = () => {
+            tg.showConfirm("Вы уверены, что хотите продать ВСЕ активы по текущей цене?", async (confirmed) => {
+                if (confirmed) {
+                    tg.MainButton.showProgress();
+                    const res = await api('/sell_all', 'POST');
+                    tg.MainButton.hideProgress();
+
+                    if (res && res.status === 'ok') {
+                        tg.HapticFeedback.notificationOccurred('success');
+                        tg.showAlert(res.message);
+                        update();
+                    } else {
+                        tg.showAlert(res ? res.error : "Ошибка");
+                    }
+                }
+            });
+        };
+
+        window.switchTab = (id, el) => {
+            document.querySelectorAll('.screen').forEach(e => e.classList.remove('active'));
+            document.getElementById(`screen-${id}`).classList.add('active');
+
+            document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active'));
+            el.classList.add('active');
+
+            if (id === 'trade') setTimeout(() => drawChart(state.market.find(a => a.symbol === state.symbol)?.history), 100);
+        };
+
+        // Start
+        update();
+        setInterval(update, 1000);
+
+    </script>
+</body>
+</html>
