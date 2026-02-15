@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: bandit-city-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_IDS
+        value: 1750230081
+      - key: PORT
+        value: 10000
